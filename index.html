@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="ar">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>تذكير وفاء</title>
+
+<!-- Flatpickr -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
+<script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+<script src="https://cdn.jsdelivr.net/npm/flatpickr/dist/l10n/ar.js"></script>
+
+<!-- Firebase SDKs -->
+<script src="https://www.gstatic.com/firebasejs/10.14.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.14.0/firebase-messaging-compat.js"></script>
+
+<style>
+    body { font-family: Arial, sans-serif; margin: 0; padding-bottom: 80px; background: #f4f4f4; direction: rtl; }
+    header { background: #4a90e2; color: white; padding: 15px; text-align: center; font-size: 1.5em; }
+    .container { max-width: 800px; margin: 20px auto; padding: 15px; background: white; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.2); }
+    .form-group { margin-bottom: 16px; }
+    label { display: block; margin-bottom: 8px; font-weight: bold; color: #333; }
+    input, select { width: 100%; padding: 12px; font-size: 1em; border-radius: 6px; border: 1px solid #ccc; }
+    table { width: 100%; border-collapse: collapse; margin-top: 15px; }
+    th, td { border: 1px solid #ddd; padding: 10px; text-align: center; }
+    th { background: #4a90e2; color: white; }
+    .tabs { position: fixed; bottom: 0; left: 0; width: 100%; background: #800080; display: flex; justify-content: space-around; }
+    .tabs button { flex: 1; padding: 15px; border: none; background: #a64ca6; color: white; font-size: 1em; cursor: pointer; }
+    .tabs button:hover { background: #993399; }
+    .tab-content { display: none; }
+
+    /* Popup */
+    #popupOverlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 999; }
+    #popup { position: fixed; top: 50%; left: 50%; transform: translate(-50%,-50%); background: #fff; border: 2px solid #4a90e2; border-radius: 10px; padding: 20px; width: 90%; max-width: 420px; box-shadow: 0 8px 24px rgba(0,0,0,0.3); z-index: 1000; display: none; }
+    #popup h3 { margin: 0 0 10px; color: #4a90e2; text-align: center; }
+</style>
+</head>
+<body>
+
+<header>تذكير وفاء</header>
+
+<div class="container">
+    <!-- تبويب تذكير جديد -->
+    <div id="tab-new" class="tab-content">
+        <h3 style="color:#4a90e2; text-align:center;">إضافة تذكير جديد</h3>
+
+        <div class="form-group">
+            <label>نوع التذكير:</label>
+            <select id="type">
+                <option value="تذاكر">تذاكر</option>
+                <option value="عمرة">عمرة</option>
+                <option value="تأشيرات">تأشيرات</option>
+                <option value="آخر">آخر</option>
+            </select>
+        </div>
+
+        <div class="form-group">
+            <label>العنوان:</label>
+            <input type="text" id="title" placeholder="اكتب عنوان التذكير هنا">
+        </div>
+
+        <div class="form-group">
+            <label>تاريخ التذكير:</label>
+            <input type="text" id="date" placeholder="اختر التاريخ">
+        </div>
+
+        <div class="form-group">
+            <label>الوقت:</label>
+            <input type="text" id="time" placeholder="اختر الوقت">
+        </div>
+
+        <button onclick="addReminder()" style="width:100%; padding:12px; background:#4a90e2; color:white; border:none; border-radius:6px; font-size:1.1em; cursor:pointer;">
+            💾 حفظ التذكير
+        </button>
+        <br><br>
+        <button id="enablePush" style="width:100%; padding:12px; background:#888; color:white; border:none; border-radius:6px; font-size:1em; cursor:pointer;">
+            🔔 تفعيل الإشعارات
+        </button>
+        <br><br>
+        <button onclick="testSound()" style="width:100%; padding:12px; background:#555; color:white; border:none; border-radius:6px; font-size:1em; cursor:pointer;">
+            🔊 اختبار الصوت
+        </button>
+    </div>
+
+    <!-- تبويب التذكيرات القادمة -->
+    <div id="tab-upcoming" class="tab-content">
+        <h3>التذكيرات القادمة</h3>
+        <table id="upcomingTable">
+            <thead>
+                <tr>
+                    <th>العنوان</th>
+                    <th>النوع</th>
+                    <th>التاريخ</th>
+                    <th>الوقت</th>
+                </tr>
+            </thead>
+            <tbody></tbody>
+        </table>
+    </div>
+</div>
+
+<!-- نافذة منبثقة -->
+<div id="popupOverlay"></div>
+<div id="popup">
+    <h3>🔔 تنبيه التذكير</h3>
+    <p id="popupText"></p>
+    <button onclick="closePopup()">إغلاق</button>
+</div>
+
+<script>
+let reminders = [];
+
+// ✅ كود Firebase الخاص بك
+const firebaseConfig = {
+  apiKey: "AIzaSyBvzdxIg12wzWobOco5WmcWR5oVdoVnsTM",
+  authDomain: "reminders-app-5c038.firebaseapp.com",
+  projectId: "reminders-app-5c038",
+  storageBucket: "reminders-app-5c038.firebasestorage.app",
+  messagingSenderId: "864515961662",
+  appId: "1:864515961662:web:4d6afea2d97d07d859b26f",
+  measurementId: "G-MQVVLYJ4H3"
+};
+firebase.initializeApp(firebaseConfig);
+const messaging = firebase.messaging();
+
+// ⚠️ ضعي هنا مفتاح VAPID العام من Cloud Messaging
+const vapidKey = "YOUR_PUBLIC_VAPID_KEY";
+
+// تسجيل Service Worker
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('/firebase-messaging-sw.js')
+    .then(() => console.log('Service Worker مسجّل'))
+    .catch(err => console.error('فشل تسجيل SW', err));
+}
+
+// زر تفعيل الإشعارات
+document.getElementById('enablePush').addEventListener('click', async () => {
+  const permission = await Notification.requestPermission();
+  if (permission !== 'granted') {
+    alert('تم رفض الإذن. الإشعارات لن تعمل.');
+    return;
+  }
+  const reg = await navigator.serviceWorker.ready;
+  messaging.useServiceWorker(reg);
+  const token = await messaging.getToken({ vapidKey });
+  console.log('FCM token:', token);
+  alert('تم تفعيل الإشعارات ✅');
+});
+
+// زر اختبار الصوت
+function testSound(){
+  try {
+    const audio = new Audio("https://www.soundjay.com/button/beep-07.wav");
+    audio.play();
+    alert("تم تشغيل الصوت ✅");
+  } catch(e){
+    alert("تعذر تشغيل الصوت ❌");
+  }
+}
+
+// إضافة تذكير
+function addReminder(){
+  const title = document.getElementById('title').value.trim();
+  const type = document.getElementById('type').value;
+  const date = document.getElementById('date').value;
+  const time = document.getElementById('time').value;
+
+  if(!title || !date || !time){ 
+    alert("⚠️ أدخل كل البيانات"); 
+    return; 
+  }
+
+  reminders.push({title,type,date,time});
+  renderTables();
+  alert("✅ تم حفظ التذكير");
+}
+
+// عرض التذكيرات
+function renderTables(){
+  const tbody = document.getElementById('upcomingTable').querySelector('tbody');
+  tbody.innerHTML='';
+  reminders.forEach(r=>{
+    const tr=document.createElement('tr');
+        tr.innerHTML=`<td>${r.title}</td><td>${r.type}</td><td>${r.date}</td><td>${r.time}</td>`;
+    tbody.appendChild(tr);
+  });
+}
+
+function openPopup(text){
+  document.getElementById('popupText').textContent=text;
+  document.getElementById('popupOverlay').style.display='block';
+  document.getElementById('popup').style.display='block';
+}
+
+function closePopup(){
+  document.getElementById('popupOverlay').style.display='none';
+  document.getElementById('popup').style.display='none';
+}
+
+// استقبال رسالة أثناء فتح الصفحة من Firebase
+messaging.onMessage((payload) => {
+  const n = payload.notification || {};
+  const d = payload.data || {};
+  const title = n.title || 'تنبيه التذكير';
+  const body  = n.body  || d.body || `${d.type || ''} - ${d.title || ''} (${d.date || ''} ${d.time || ''})`;
+
+  openPopup(`${title}\n${body}`);
+  try { new Audio("https://www.soundjay.com/button/beep-07.wav").play(); } catch(e){}
+});
+
+// تهيئة Flatpickr
+flatpickr("#date",{locale:"ar",dateFormat:"Y-m-d"});
+flatpickr("#time",{enableTime:true,noCalendar:true,dateFormat:"H:i",time_24hr:true});
+
+// التبويبات
+function showTab(tab){
+  document.querySelectorAll('.tab-content').forEach(el=>el.style.display='none');
+  document.getElementById(tab).style.display='block';
+}
+showTab('tab-new');
+</script>
+
+<!-- أزرار التبويبات -->
+<div class="tabs">
+  <button onclick="showTab('tab-new')">➕ تذكير جديد</button>
+  <button onclick="showTab('tab-upcoming')">📅 القادمة</button>
+</div>
+
+</body>
+</html>
